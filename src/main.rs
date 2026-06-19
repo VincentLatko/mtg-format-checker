@@ -5,7 +5,9 @@ use reqwest::{
     header::{
         HeaderMap,
         HeaderValue,
-        USER_AGENT
+        USER_AGENT,
+        ACCEPT,
+        ACCEPT_LANGUAGE,
     }
 };
 use axum::{
