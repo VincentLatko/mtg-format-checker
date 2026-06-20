@@ -1,3 +1,4 @@
+use chrono;
 use std::collections::{HashMap, HashSet};
 use serde::Deserialize;
 use reqwest::{
@@ -21,9 +22,18 @@ use axum::{
 struct CardWrapper {}
 
 #[derive(Deserialize, Debug)]
+struct User {
+    #[serde(rename = "userName")]
+    user_name: String,
+}
+
+#[derive(Deserialize, Debug)]
 struct MoxfieldDeck {
+    name: String,
     mainboard: HashMap<String, CardWrapper>,
     sideboard: Option<HashMap<String, CardWrapper>>,
+    #[serde(rename = "createdByUser")]
+    created_by_user: User,
 }
 
 #[tokio::main]
@@ -35,7 +45,11 @@ async fn main() {
 
 async fn format_check(Path(mox_id): Path<String>) -> Html<String> {
     //let mut debug_log = String::new();
+    let time_stamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let mut moxfield_headers = HeaderMap::new();
+    let mut all_legal = true;
+    let mut output = String::new();
+    let mut legal: Vec<String> = Vec::new();
     moxfield_headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
     moxfield_headers.insert(ACCEPT, HeaderValue::from_static("text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"));
     moxfield_headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.9"));
@@ -55,6 +69,9 @@ async fn format_check(Path(mox_id): Path<String>) -> Html<String> {
         Err(_) => return to_html("Could not get deck list!"),
     };
 
+    let deck_name: &str = &json_response.name;
+    let mox_user: &str = &json_response.created_by_user.user_name;
+    output.push_str(&format!("TIMESTAMP: {}<br>USER: {}<br>DECKNAME: {}<br><hr>", time_stamp, mox_user, deck_name));
     let mut decklist: Vec<&str> = Vec::new();
     for card in json_response.mainboard.keys(){
         decklist.push(card.as_str());
@@ -77,9 +94,6 @@ async fn format_check(Path(mox_id): Path<String>) -> Html<String> {
         Err(_) => return to_html("Could not connect to Scryfall!"),
     };
 
-    let mut all_legal = true;
-    let mut output = String::new();
-    let mut legal: Vec<String> = Vec::new();
     for chunk in decklist.chunks(10) {
         let name_string: Vec<String> = chunk.iter().map(|card| format!("!\"{}\"", card)).collect();
         let card_chunk = name_string.join(" or ");
@@ -87,8 +101,7 @@ async fn format_check(Path(mox_id): Path<String>) -> Html<String> {
         let params = [("q", query.as_str())];
         let scryfall_response = match scryfall_client.get("https://api.scryfall.com/cards/search").query(&params).send().await {
             Ok(sres) => sres,
-            Err(_) => return to_html(&format!("Failed to check card chunk!")),
-        };
+            Err(_) => return to_html(&format!("Failed to check card chunk!")), };
 
         match scryfall_response.status() {
             StatusCode::OK => {
@@ -121,7 +134,7 @@ async fn format_check(Path(mox_id): Path<String>) -> Html<String> {
     for card in decklist {
         if !legal_set.contains(card){
             all_legal = false;
-            output.push_str(&format!("{}\n", card));
+            output.push_str(&format!("{}<br>", card));
         }
     }
 
@@ -140,7 +153,11 @@ fn to_html(content: &str) -> Html<String> {
             <head>
                 <title>MTG Format Checker</title>
                 <style>
-                    body {{ background-color: #000; color: #fff; font-family: monospace; padding: 20px; font-size: 16px; white-space: pre-wrap; line-height: 1.5; }}
+                    body {{ background-color: #121212; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 30px; line-height: 1.5; }}
+                    .meta-box {{ background: #1e1e1e; border: 1px solid #333; padding: 20px; border-radius: 6px; margin-bottom: 25px; }}
+                    .deck-title {{ margin: 0 0 10px 0; color: #00a2ff; font-size: 24px; font-weight: bold; }}
+                    .meta-item {{ margin: 4px 0; color: #b3b3b3; font-size: 14px; }}
+                    .results-output {{ font-family: monospace; font-size: 16px; white-space: pre-wrap; background: #1a1a1a; padding: 15px; border-radius: 4px; border: 1px solid #222; }}
                 </style>
             </head>
             <body>{}</body>
