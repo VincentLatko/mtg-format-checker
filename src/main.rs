@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use serde::Deserialize;
 use reqwest::{
     StatusCode, 
@@ -34,6 +34,7 @@ async fn main() {
 }
 
 async fn format_check(Path(mox_id): Path<String>) -> Html<String> {
+    //let mut debug_log = String::new();
     let mut moxfield_headers = HeaderMap::new();
     moxfield_headers.insert(USER_AGENT, HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
     moxfield_headers.insert(ACCEPT, HeaderValue::from_static("text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"));
@@ -78,15 +79,47 @@ async fn format_check(Path(mox_id): Path<String>) -> Html<String> {
 
     let mut all_legal = true;
     let mut output = String::new();
-    for card in decklist {
-        let query = format!(r#"(eur<=2 and eur>0.02) game:paper unique:cards border:black !"{card}""#);
+    let mut legal: Vec<String> = Vec::new();
+    for chunk in decklist.chunks(10) {
+        let name_string: Vec<String> = chunk.iter().map(|card| format!("!\"{}\"", card)).collect();
+        let card_chunk = name_string.join(" or ");
+        let query = format!(r#"(eur<=2 and eur>0.02) game:paper unique:cards border:black ({card_chunk})"#);
         let params = [("q", query.as_str())];
         let scryfall_response = match scryfall_client.get("https://api.scryfall.com/cards/search").query(&params).send().await {
             Ok(sres) => sres,
-            Err(_) => return to_html(&format!("Failed to check {card}")),
+            Err(_) => return to_html(&format!("Failed to check card chunk!")),
         };
 
-        if scryfall_response.status() == StatusCode::NOT_FOUND {
+        match scryfall_response.status() {
+            StatusCode::OK => {
+                //output.push_str(&format!("Scryfall: {:?}\n\n", scryfall_response.text().await));
+                if let Ok(dres) = scryfall_response.json::<serde_json::Value>().await {
+                    if let Some(cards) = dres.get("data").and_then(|d| d.as_array()) {
+                        for card in cards {
+                            if let Some(name) = card["name"].as_str() {
+                                legal.push(name.to_string());
+                                //debug_log.push_str(&format!("{:?}", legal));
+                            }
+                        }
+                    }
+                }
+            }
+
+            StatusCode::NOT_FOUND => {
+                all_legal = false;
+            }
+
+            _ => {
+                output.push_str("SOME ERROR WITH SCRYFALL.");
+            }
+        }
+        
+        tokio::time::sleep(tokio::time::Duration::from_millis(150)).await;
+    }
+
+    let legal_set: HashSet<String> = legal.into_iter().collect();
+    for card in decklist {
+        if !legal_set.contains(card){
             all_legal = false;
             output.push_str(&format!("{}\n", card));
         }
