@@ -97,7 +97,7 @@ async fn format_check(Path(mox_id): Path<String>) -> Html<String> {
     for chunk in decklist.chunks(10) {
         let name_string: Vec<String> = chunk.iter().map(|card| format!("!\"{}\"", card)).collect();
         let card_chunk = name_string.join(" or ");
-        let query = format!(r#"(eur<=2 and eur>0.02) game:paper unique:cards border:black ({card_chunk})"#);
+        let query = format!(r#"(eur<=2 and eur>0) -is:funny game:paper unique:cards border:black ({card_chunk})"#);
         let params = [("q", query.as_str())];
         let scryfall_response = match scryfall_client.get("https://api.scryfall.com/cards/search").query(&params).send().await {
             Ok(sres) => sres,
